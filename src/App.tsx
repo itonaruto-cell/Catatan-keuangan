@@ -34,9 +34,16 @@ export function App() {
   const [sheet, setSheet] = useState<Sheet>(null);
 
   useEffect(() => {
+    // History is kept flat: Beranda underneath, at most one other page on top, so the
+    // phone's back button goes from any page to Beranda and from Beranda out of the app.
+    if (pageFromHash() !== 'beranda') {
+      const h = location.hash;
+      history.replaceState(null, '', location.pathname);
+      history.pushState(null, '', h);
+    }
     const on = () => setPage(pageFromHash());
-    window.addEventListener('hashchange', on);
-    return () => window.removeEventListener('hashchange', on);
+    window.addEventListener('popstate', on);
+    return () => window.removeEventListener('popstate', on);
   }, []);
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
 
@@ -50,7 +57,13 @@ export function App() {
     backupToDrive(false).then((at) => updateSettings({ lastBackupAt: at.toISOString() })).catch(() => {});
   }, [online]);
 
-  const go = (p: Page) => { location.hash = p === 'beranda' ? '' : p; setPage(p); };
+  const go = (p: Page) => {
+    if (p === page) return;
+    if (p === 'beranda') { history.back(); return; }
+    if (page === 'beranda') history.pushState(null, '', `#${p}`);
+    else history.replaceState(null, '', `#${p}`);
+    setPage(p);
+  };
 
   return (
     <div className="app">
