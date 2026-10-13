@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { WalletKind } from '../lib/db';
 import { Icon } from './Icon';
 
@@ -35,13 +35,52 @@ export function WalletIcon({ kind }: { kind: WalletKind }) {
   return <span className="ico" style={{ background: 'var(--acc-soft)', color: 'var(--acc-text)' }} aria-hidden="true"><Icon name={kind === 'bank' ? 'bank' : kind === 'cash' ? 'cash' : 'phone'} /></span>;
 }
 
+// The phone's back button closes the open sheet instead of leaving the app:
+// every open sheet owns one browser history entry.
+const openSheets: { close: () => void }[] = [];
+let ownedEntries = 0;
+let skipPops = 0;
+let syncQueued = false;
+
+function syncHistory() {
+  if (syncQueued) return;
+  syncQueued = true;
+  // Deferred so closing one sheet and opening the next (e.g. a list item opening its edit form) nets out.
+  setTimeout(() => {
+    syncQueued = false;
+    while (ownedEntries < openSheets.length) { history.pushState({ sheet: true }, ''); ownedEntries++; }
+    if (ownedEntries > openSheets.length) {
+      skipPops++;
+      history.go(openSheets.length - ownedEntries);
+      ownedEntries = openSheets.length;
+    }
+  });
+}
+
+window.addEventListener('popstate', () => {
+  if (skipPops) { skipPops--; return; }
+  if (!ownedEntries) return;
+  ownedEntries--;
+  openSheets[openSheets.length - 1]?.close();
+});
+
 export function Modal({ children, onClose, full = false, label }: { children: ReactNode; onClose: () => void; full?: boolean; label: string }) {
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const entry = { close: () => closeRef.current() };
+    openSheets.push(entry);
+    syncHistory();
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current(); };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
-    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; };
-  }, [onClose]);
+    return () => {
+      openSheets.splice(openSheets.indexOf(entry), 1);
+      syncHistory();
+      document.removeEventListener('keydown', onKey);
+      if (!openSheets.length) document.body.style.overflow = '';
+    };
+  }, []);
   return (
     <div className="overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className={`modal${full ? ' full' : ''}`} role="dialog" aria-modal="true" aria-label={label}>{children}</div>
