@@ -36,3 +36,30 @@ describe('mapRows', () => {
     expect(r.rows.map((x) => [x.type, x.amount])).toEqual([['out', 8000], ['in', 500000]]);
   });
 });
+
+describe('export from the old "Catatan Keuangan" app', () => {
+  it('skips the summary block and reads Pengeluaran/Pemasukan columns', () => {
+    const rows = [
+      [null, 'Tanggal', null, '01/02/2026 - 31/10/2026', null, null, null],
+      [null, 'Pemasukan', null, 'Rp0', null, null, null],
+      [null, 'Pengeluaran', null, 'Rp47.204.000', null, null, null],
+      [null, 'Saldo', null, 'Rp-47.204.000', null, null, null],
+      [null, 'No', 'Tanggal', 'Keterangan', 'Pengeluaran', 'Pemasukan', 'Kategori'],
+      [null, '1', '01/02/2026', '', 'Rp100.000', '', 'Makanan'],
+      [null, '7', '04/02/2026', 'Netflix', 'Rp45.000', '', 'Elektronik'],
+      [null, '8', '05/02/2026', 'Gaji', '', 'Rp5.000.000', 'Gaji'],
+      [null, 'File ini dibuat oleh aplikasi catatan keuangan', null, null, null, null, null],
+    ];
+    const h = findHeaderRow(rows);
+    expect(h).toBe(4);
+    const m = guessMapping(rows[h]);
+    expect(m).toMatchObject({ date: 2, note: 3, expense: 4, income: 5, category: 6 });
+    const r = mapRows(rows.slice(h + 1), m);
+    expect(r.skipped).toBe(1);
+    expect(r.rows).toEqual([
+      { date: '2026-02-01', type: 'out', amount: 100000, category: 'Makanan', note: '', wallet: undefined },
+      { date: '2026-02-04', type: 'out', amount: 45000, category: 'Elektronik', note: 'Netflix', wallet: undefined },
+      { date: '2026-02-05', type: 'in', amount: 5000000, category: 'Gaji', note: 'Gaji', wallet: undefined },
+    ]);
+  });
+});

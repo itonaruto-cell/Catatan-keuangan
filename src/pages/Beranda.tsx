@@ -7,7 +7,7 @@ import { dayLabel, MONTHS, MONTHS_SHORT, parseISO, rp, todayISO } from '../lib/f
 
 type Mode = 'harian' | 'mingguan' | 'bulanan' | 'tahunan';
 
-export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: (p: 'laporan' | 'aset' | 'pengaturan') => void }) {
+export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: (p: 'laporan' | 'aset' | 'pengaturan' | 'data') => void }) {
   const [mode, setMode] = useState<Mode>('harian');
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
@@ -94,10 +94,18 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
           <span style={{ color: 'var(--acc-text)' }}>Lihat</span>
         </button>
 
+        {txs.length === 0 && (
+          <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <strong>Punya catatan dari aplikasi lama?</strong>
+            <span className="small muted">Unggah file Excel atau CSV-nya supaya riwayat lama ikut masuk.</span>
+            <button className="btn primary" onClick={() => go('data')}><Icon name="upload" size={18} />Impor file Excel</button>
+          </div>
+        )}
+
         <h2 style={{ margin: '4px 0 0', fontSize: 18 }}>Transaksi</h2>
         {mode === 'harian' && <DailyList txs={scoped} today={today} walletName={walletName} onEdit={onEdit} />}
         {mode === 'mingguan' && <WeeklyList txs={scoped} year={year} month={month} />}
-        {mode === 'bulanan' && <PeriodRows rows={MONTHS.map((name, i) => ({ label: name, key: `${year}-${String(i + 1).padStart(2, '0')}` })).reverse()} txs={scoped} onPick={(k) => { setMonth(Number(k.slice(5)) - 1); setMode('harian'); }} />}
+        {mode === 'bulanan' && <PeriodRows rows={MONTHS.map((name, i) => ({ label: name, key: `${year}-${String(i + 1).padStart(2, '0')}` })).filter((r) => r.key <= today.slice(0, 7) || scoped.some((t) => t.date.startsWith(r.key))).reverse()} txs={scoped} onPick={(k) => { setMonth(Number(k.slice(5)) - 1); setMode('harian'); }} />}
         {mode === 'tahunan' && <PeriodRows rows={[...new Set(txs.map((t) => t.date.slice(0, 4)))].sort().reverse().map((y) => ({ label: y, key: y }))} txs={scoped} onPick={(k) => { setYear(Number(k)); setMode('bulanan'); }} />}
       </div>
     </>

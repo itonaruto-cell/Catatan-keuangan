@@ -29,6 +29,7 @@ function ImportSection() {
   const [walletId, setWalletId] = useState<number | undefined>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [keepBalances, setKeepBalances] = useState(true);
 
   async function onFile(f: File | undefined) {
     if (!f) return;
@@ -57,7 +58,7 @@ function ImportSection() {
     if (!result || !fallback) return;
     setBusy(true);
     try {
-      const r = await applyImport(result.rows, fallback);
+      const r = await applyImport(result.rows, fallback, keepBalances);
       toast(`${r.added} transaksi dimasukkan${r.duplicates ? `, ${r.duplicates} sudah ada` : ''}`);
       setRows(null);
     } finally {
@@ -102,6 +103,10 @@ function ImportSection() {
             </div>
           </div>
 
+          <label className="row small" style={{ alignItems: 'flex-start' }}>
+            <input type="checkbox" checked={keepBalances} onChange={(e) => setKeepBalances(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--acc)', flex: 'none' }} />
+            <span>Jangan ubah saldo dompet saat ini. Riwayat lama hanya masuk ke catatan dan laporan.</span>
+          </label>
           <div className="small"><strong>{result.rows.length}</strong> transaksi terbaca{result.skipped ? `, ${result.skipped} baris dilewati (tanpa tanggal/jumlah)` : ''}.</div>
           {result.rows.length > 0 && (
             <div className="table-wrap">

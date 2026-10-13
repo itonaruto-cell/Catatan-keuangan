@@ -39,13 +39,15 @@ export async function readSheet(file: File): Promise<Cell[][]> {
   return rows.filter((r) => r.some((c) => c !== null && c !== ''));
 }
 
-/** Index of the header row: the first row in the top 10 with 2+ recognised column names. */
+/** Index of the header row: the row in the top 15 with the most recognised column names. */
 export function findHeaderRow(rows: Cell[][]): number {
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const hits = rows[i].filter((c) => typeof c === 'string' && GUESS.some(([, re]) => re.test(c.trim()))).length;
-    if (hits >= 2) return i;
+  let best = 0;
+  let bestHits = 1;
+  for (let i = 0; i < Math.min(rows.length, 15); i++) {
+    const hits = rows[i].filter((c) => typeof c === 'string' && !/\d/.test(c) && GUESS.some(([, re]) => re.test(c.trim()))).length;
+    if (hits > bestHits) { best = i; bestHits = hits; }
   }
-  return 0;
+  return best;
 }
 
 export function guessMapping(header: Cell[]): Mapping {
