@@ -2,7 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Badge } from '../components/ui';
-import { db, receivableRemaining, walletBalances, type Transaction } from '../lib/db';
+import { db, receivableRemaining, type Transaction } from '../lib/db';
 import { dayLabel, MONTHS, MONTHS_SHORT, parseISO, rp, todayISO } from '../lib/format';
 
 type Mode = 'harian' | 'mingguan' | 'bulanan' | 'tahunan';
@@ -14,12 +14,8 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
   const [month, setMonth] = useState(now.getMonth());
 
   const txs = useLiveQuery(() => db.transactions.toArray(), []) ?? [];
-  const wallets = useLiveQuery(() => db.wallets.toArray(), []) ?? [];
   const receivables = useLiveQuery(() => db.receivables.toArray(), []) ?? [];
 
-  const balances = walletBalances(wallets, txs);
-  const total = [...balances.values()].reduce((a, b) => a + b, 0);
-  const walletName = new Map(wallets.map((w) => [w.id!, w.name]));
 
   const ym = `${year}-${String(month + 1).padStart(2, '0')}`;
   const inScope = (t: Transaction) =>
@@ -56,9 +52,9 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
             {dueSoon.length > 0 && <span style={{ position: 'absolute', top: 9, right: 11, width: 9, height: 9, borderRadius: 5, background: 'var(--exp)' }} />}
           </button>
         </div>
-        <div className="hero-label">Total Saldo</div>
-        <div className="hero-amount">{rp(total)}</div>
-        <div className="chip">Tersebar di {wallets.length} dompet</div>
+        <div className="hero-label">Pengeluaran</div>
+        <div className="hero-amount">{rp(expense)}</div>
+        <div className="chip">Pemasukan {rp(income)}</div>
       </div>
 
       <div className="sheet-body">
@@ -66,19 +62,6 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
           {(['harian', 'mingguan', 'bulanan', 'tahunan'] as Mode[]).map((m) => (
             <button key={m} aria-pressed={mode === m} onClick={() => setMode(m)}>{m[0].toUpperCase() + m.slice(1)}</button>
           ))}
-        </div>
-
-        <div className="grid2">
-          <div className="card stat">
-            <span className="ico" style={{ background: 'var(--inc-soft)', color: 'var(--inc)' }}><Icon name="up" size={18} stroke={2} /></span>
-            <span className="label">Pemasukan</span>
-            <span className="value">{rp(income)}</span>
-          </div>
-          <div className="card stat">
-            <span className="ico" style={{ background: 'var(--exp-soft)', color: 'var(--exp)' }}><Icon name="down" size={18} stroke={2} /></span>
-            <span className="label">Pengeluaran</span>
-            <span className="value">{rp(expense)}</span>
-          </div>
         </div>
 
         {dueSoon.length > 0 && (
@@ -103,7 +86,7 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
         )}
 
         <h2 style={{ margin: '4px 0 0', fontSize: 18 }}>Transaksi</h2>
-        {mode === 'harian' && <DailyList txs={scoped} today={today} walletName={walletName} onEdit={onEdit} />}
+        {mode === 'harian' && <DailyList txs={scoped} today={today} onEdit={onEdit} />}
         {mode === 'mingguan' && <WeeklyList txs={scoped} year={year} month={month} />}
         {mode === 'bulanan' && <PeriodRows rows={MONTHS.map((name, i) => ({ label: name, key: `${year}-${String(i + 1).padStart(2, '0')}` })).filter((r) => r.key <= today.slice(0, 7) || scoped.some((t) => t.date.startsWith(r.key))).reverse()} txs={scoped} onPick={(k) => { setMonth(Number(k.slice(5)) - 1); setMode('harian'); }} />}
         {mode === 'tahunan' && <PeriodRows rows={[...new Set(txs.map((t) => t.date.slice(0, 4)))].sort().reverse().map((y) => ({ label: y, key: y }))} txs={scoped} onPick={(k) => { setYear(Number(k)); setMode('bulanan'); }} />}
@@ -112,7 +95,7 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
   );
 }
 
-function DailyList({ txs, today, walletName, onEdit }: { txs: Transaction[]; today: string; walletName: Map<number, string>; onEdit: (t: Transaction) => void }) {
+function DailyList({ txs, today, onEdit }: { txs: Transaction[]; today: string; onEdit: (t: Transaction) => void }) {
   if (!txs.length) return <div className="empty">Belum ada transaksi di bulan ini.<br />Tekan tombol + untuk mencatat.</div>;
   const byDate = new Map<string, Transaction[]>();
   for (const t of [...txs].sort((a, b) => (b.date + (b.time ?? '')).localeCompare(a.date + (a.time ?? '')) || b.createdAt - a.createdAt)) {
@@ -133,18 +116,14 @@ function DailyList({ txs, today, walletName, onEdit }: { txs: Transaction[]; tod
             <div className="list">
               {list.map((t) => (
                 <button key={t.id} className="item" onClick={() => onEdit(t)}>
-                  {t.type === 'transfer'
-                    ? <span className="ico" style={{ background: 'var(--acc-soft)', color: 'var(--acc-text)' }}><Icon name="swap" /></span>
-                    : <Badge label={t.category} />}
+                  <Badge label={t.category} />
                   <span className="main">
                     <span className="title" style={{ display: 'block' }}>{t.note || t.category}</span>
-                    <span className="sub" style={{ display: 'block' }}>
-                      {t.type === 'transfer' ? `${walletName.get(t.walletId)} → ${walletName.get(t.toWalletId!)}` : `${t.category} · ${walletName.get(t.walletId) ?? '-'}`}
-                    </span>
+                    {t.note && <span className="sub" style={{ display: 'block' }}>{t.category}</span>}
                   </span>
                   <span className="right">
-                    <span className={`amt ${t.type === 'in' ? 'inc' : t.type === 'out' ? 'exp' : ''}`} style={{ display: 'block' }}>
-                      {t.type === 'in' ? '+' : t.type === 'out' ? '−' : ''}{rp(t.amount)}
+                    <span className={`amt ${t.type === 'in' ? 'inc' : 'exp'}`} style={{ display: 'block' }}>
+                      {t.type === 'in' ? '+' : '−'}{rp(t.amount)}
                     </span>
                     {t.time && <span className="small muted">{t.time}</span>}
                   </span>

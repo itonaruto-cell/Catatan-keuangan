@@ -1,14 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie';
 
-export type TxType = 'out' | 'in' | 'transfer';
+export type TxType = 'out' | 'in';
 
 export interface Transaction {
   id?: number;
   type: TxType;
   amount: number;
   category: string;
-  walletId: number;
-  toWalletId?: number;
   date: string; // YYYY-MM-DD
   time?: string; // HH:MM
   note: string;
@@ -21,7 +19,8 @@ export interface Wallet {
   id?: number;
   name: string;
   kind: WalletKind;
-  initialBalance: number;
+  /** Typed in by the user; transactions never change it. */
+  balance: number;
   note?: string;
 }
 
@@ -76,6 +75,33 @@ db.version(1).stores({
   receivables: '++id, name',
 });
 
+// v2: wallets are just balances the user keeps up to date; transactions no longer touch them.
+db.version(2).stores({ transactions: '++id, date, type, category' }).upgrade(async (tx) => {
+  const { transactions, wallets } = separateWallets(await tx.table('transactions').toArray(), await tx.table('wallets').toArray());
+  await tx.table('transactions').clear();
+  await tx.table('transactions').bulkAdd(transactions);
+  await tx.table('wallets').bulkPut(wallets);
+});
+
+type LegacyTx = Omit<Transaction, 'type'> & { type: TxType | 'transfer'; walletId?: number; toWalletId?: number };
+type LegacyWallet = Wallet & { initialBalance?: number };
+
+/** Converts data from before v2: each wallet keeps the balance it showed (never below zero), wallet transfers are dropped. */
+export function separateWallets(txs: LegacyTx[], wallets: LegacyWallet[]): { transactions: Transaction[]; wallets: Wallet[] } {
+  return {
+    wallets: wallets.map(({ initialBalance, ...w }) => {
+      if (initialBalance === undefined) return w;
+      let b = initialBalance;
+      for (const t of txs) {
+        if (t.walletId === w.id) b += t.type === 'in' ? t.amount : -t.amount;
+        if (t.type === 'transfer' && t.toWalletId === w.id) b += t.amount;
+      }
+      return { ...w, balance: Math.max(0, b) };
+    }),
+    transactions: txs.filter((t) => t.type !== 'transfer').map(({ walletId: _w, toWalletId: _t, ...t }) => t as Transaction),
+  };
+}
+
 export const DEFAULT_OUT_CATEGORIES = [
   'Belanja', 'Bensin', 'Buah-buahan', 'Cemilan', 'Elektronik', 'Hadiah', 'Hiburan', 'Kantor',
   'Kecantikan', 'Kesehatan', 'Makanan', 'Motor', 'Pakaian', 'Pendidikan', 'Rumah', 'Tagihan',
@@ -88,26 +114,12 @@ db.on('populate', async () => {
     ...DEFAULT_OUT_CATEGORIES.map((name) => ({ name, type: 'out' as const })),
     ...DEFAULT_IN_CATEGORIES.map((name) => ({ name, type: 'in' as const })),
   ]);
-  await db.wallets.add({ name: 'Tunai', kind: 'cash', initialBalance: 0 });
 });
 
 export function receivableRemaining(r: Receivable): number {
   return r.amount - r.payments.reduce((s, p) => s + p.amount, 0);
 }
 
-export function walletBalances(wallets: Wallet[], txs: Transaction[]): Map<number, number> {
-  const m = new Map<number, number>();
-  for (const w of wallets) m.set(w.id!, w.initialBalance);
-  for (const t of txs) {
-    if (t.type === 'in') m.set(t.walletId, (m.get(t.walletId) ?? 0) + t.amount);
-    else if (t.type === 'out') m.set(t.walletId, (m.get(t.walletId) ?? 0) - t.amount);
-    else {
-      m.set(t.walletId, (m.get(t.walletId) ?? 0) - t.amount);
-      if (t.toWalletId != null) m.set(t.toWalletId, (m.get(t.toWalletId) ?? 0) + t.amount);
-    }
-  }
-  return m;
-}
 
 export interface BackupData {
   app: 'catatan-keuangan';
@@ -137,8 +149,9 @@ export async function restoreAll(data: BackupData): Promise<void> {
   if (data.app !== 'catatan-keuangan') throw new Error('File ini bukan cadangan Catatan Keuangan.');
   await db.transaction('rw', [db.transactions, db.wallets, db.categories, db.investments, db.receivables], async () => {
     await Promise.all([db.transactions.clear(), db.wallets.clear(), db.categories.clear(), db.investments.clear(), db.receivables.clear()]);
-    await db.transactions.bulkAdd(data.transactions);
-    await db.wallets.bulkAdd(data.wallets);
+    const { transactions, wallets } = separateWallets(data.transactions, data.wallets);
+    await db.transactions.bulkAdd(transactions);
+    await db.wallets.bulkAdd(wallets);
     await db.categories.bulkAdd(data.categories);
     await db.investments.bulkAdd(data.investments);
     await db.receivables.bulkAdd(data.receivables);

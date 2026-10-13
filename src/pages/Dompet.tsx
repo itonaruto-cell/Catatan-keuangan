@@ -2,19 +2,17 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Modal, ModalHeader, MoneyField, toast, WalletIcon } from '../components/ui';
-import { db, walletBalances, type Wallet, type WalletKind } from '../lib/db';
+import { db, type Wallet, type WalletKind } from '../lib/db';
 import { rp, shortJuta } from '../lib/format';
 
 const KIND_LABEL: Record<WalletKind, string> = { bank: 'Rekening bank', ewallet: 'E-wallet', cash: 'Tunai' };
 
-export function Dompet({ onTransfer }: { onTransfer: () => void }) {
+export function Dompet() {
   const wallets = useLiveQuery(() => db.wallets.toArray(), []) ?? [];
-  const txs = useLiveQuery(() => db.transactions.toArray(), []) ?? [];
   const [editing, setEditing] = useState<Wallet | 'new' | null>(null);
 
-  const bal = walletBalances(wallets, txs);
-  const total = [...bal.values()].reduce((a, b) => a + b, 0);
-  const sumKind = (k: WalletKind) => wallets.filter((w) => w.kind === k).reduce((s, w) => s + (bal.get(w.id!) ?? 0), 0);
+  const total = wallets.reduce((s, w) => s + w.balance, 0);
+  const sumKind = (k: WalletKind) => wallets.filter((w) => w.kind === k).reduce((s, w) => s + w.balance, 0);
 
   return (
     <>
@@ -49,43 +47,38 @@ export function Dompet({ onTransfer }: { onTransfer: () => void }) {
                   <button key={w.id} className="item" onClick={() => setEditing(w)}>
                     <WalletIcon kind={w.kind} />
                     <span className="main"><span className="title" style={{ display: 'block' }}>{w.name}</span>{w.note && <span className="sub" style={{ display: 'block' }}>{w.note}</span>}</span>
-                    <span className="amt">{rp(bal.get(w.id!) ?? 0)}</span>
+                    <span className="amt">{rp(w.balance)}</span>
                   </button>
                 ))}
               </div>
             </section>
           );
         })}
-        {wallets.length > 1 && <button className="btn" onClick={onTransfer}><Icon name="swap" size={18} />Pindahkan saldo antar dompet</button>}
+        {!wallets.length && <div className="empty">Belum ada dompet.<br />Tekan Tambah untuk mencatat saldo bank atau e-wallet.</div>}
+        {wallets.length > 0 && <p className="small muted" style={{ margin: 0 }}>Saldo di sini tidak terpotong oleh catatan pengeluaran. Ketuk dompet untuk memperbarui saldonya.</p>}
       </div>
 
-      {editing && <WalletForm wallet={editing === 'new' ? undefined : editing} balance={editing === 'new' ? 0 : bal.get(editing.id!) ?? 0} onClose={() => setEditing(null)} />}
+      {editing && <WalletForm wallet={editing === 'new' ? undefined : editing} onClose={() => setEditing(null)} />}
     </>
   );
 }
 
-function WalletForm({ wallet, balance, onClose }: { wallet?: Wallet; balance: number; onClose: () => void }) {
+function WalletForm({ wallet, onClose }: { wallet?: Wallet; onClose: () => void }) {
   const [name, setName] = useState(wallet?.name ?? '');
   const [kind, setKind] = useState<WalletKind>(wallet?.kind ?? 'bank');
   const [note, setNote] = useState(wallet?.note ?? '');
-  const [current, setCurrent] = useState(balance);
+  const [current, setCurrent] = useState(wallet?.balance ?? 0);
 
   async function save() {
     if (!name.trim()) return;
-    if (wallet?.id) {
-      // Changing the balance adjusts the starting balance so history stays intact.
-      await db.wallets.update(wallet.id, { name: name.trim(), kind, note, initialBalance: wallet.initialBalance + (current - balance) });
-    } else {
-      await db.wallets.add({ name: name.trim(), kind, note, initialBalance: current });
-    }
+    if (wallet?.id) await db.wallets.update(wallet.id, { name: name.trim(), kind, note, balance: current });
+    else await db.wallets.add({ name: name.trim(), kind, note, balance: current });
     toast('Dompet disimpan');
     onClose();
   }
 
   async function remove() {
     if (!wallet?.id) return;
-    const used = await db.transactions.where('walletId').equals(wallet.id).count() + await db.transactions.filter((t) => t.toWalletId === wallet.id).count();
-    if (used) { alert(`Dompet ini dipakai di ${used} transaksi, jadi tidak bisa dihapus.`); return; }
     if (!confirm(`Hapus dompet ${wallet.name}?`)) return;
     await db.wallets.delete(wallet.id);
     onClose();

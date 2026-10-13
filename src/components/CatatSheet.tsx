@@ -8,17 +8,12 @@ import { listen, voiceSupported } from '../lib/voice';
 import { Icon } from './Icon';
 import { Modal, ModalHeader, toast } from './ui';
 
-const LAST_WALLET = 'ck-last-wallet';
-
 export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction; initialType?: TxType; onClose: () => void }) {
   const categories = useLiveQuery(() => db.categories.toArray(), []) ?? [];
-  const wallets = useLiveQuery(() => db.wallets.toArray(), []) ?? [];
 
   const [type, setType] = useState<TxType>(edit?.type ?? initialType ?? 'out');
   const [amount, setAmount] = useState(edit?.amount ?? 0);
   const [category, setCategory] = useState(edit?.category ?? '');
-  const [walletId, setWalletId] = useState<number | undefined>(edit?.walletId);
-  const [toWalletId, setToWalletId] = useState<number | undefined>(edit?.toWalletId);
   const [date, setDate] = useState(edit?.date ?? todayISO());
   const [note, setNote] = useState(edit?.note ?? '');
   const [showAllCats, setShowAllCats] = useState(false);
@@ -30,15 +25,9 @@ export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction;
   const stopRef = useRef<() => void>(() => {});
   const fileRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (walletId === undefined && wallets.length) {
-      const last = Number(localStorage.getItem(LAST_WALLET));
-      setWalletId(wallets.find((w) => w.id === last)?.id ?? wallets[0].id);
-    }
-  }, [wallets, walletId]);
   useEffect(() => () => stopRef.current(), []);
 
-  const catPool = categories.filter((c) => c.type === (type === 'in' ? 'in' : 'out'));
+  const catPool = categories.filter((c) => c.type === type);
   const visibleCats = showAllCats ? catPool : catPool.slice(0, 7);
   if (category && !visibleCats.some((c) => c.name === category)) {
     const c = catPool.find((x) => x.name === category);
@@ -46,11 +35,10 @@ export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction;
   }
 
   function applyText(text: string) {
-    const d = parseSentence(text, categories, wallets);
+    const d = parseSentence(text, categories, []);
     setType(d.type);
     if (d.amount) setAmount(d.amount);
     if (d.category) setCategory(d.category);
-    if (d.walletId) setWalletId(d.walletId);
     if (d.note) setNote(d.note);
   }
 
@@ -85,18 +73,16 @@ export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction;
     }
   }
 
-  const valid = amount > 0 && walletId !== undefined && (type === 'transfer' ? toWalletId !== undefined && toWalletId !== walletId : !!category);
+  const valid = amount > 0 && !!category;
 
   async function save() {
     if (!valid) return;
     const tx: Transaction = {
-      type, amount, category: type === 'transfer' ? 'Transfer' : category, walletId: walletId!,
-      toWalletId: type === 'transfer' ? toWalletId : undefined, date, note: note.trim(),
+      type, amount, category, date, note: note.trim(),
       time: edit?.time ?? (date === todayISO() ? nowTime() : undefined), createdAt: edit?.createdAt ?? Date.now(),
     };
     if (edit?.id) await db.transactions.update(edit.id, tx);
     else await db.transactions.add(tx);
-    localStorage.setItem(LAST_WALLET, String(walletId));
     toast(edit ? 'Perubahan disimpan' : 'Transaksi dicatat');
     onClose();
   }
@@ -136,7 +122,7 @@ export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction;
       {problem && <div className="notice warn" role="alert">{problem}</div>}
 
       <div className="seg type" role="group" aria-label="Jenis transaksi">
-        {([['out', 'Pengeluaran'], ['in', 'Pemasukan'], ['transfer', 'Transfer']] as const).map(([v, l]) => (
+        {([['out', 'Pengeluaran'], ['in', 'Pemasukan']] as const).map(([v, l]) => (
           <button key={v} className={v} aria-pressed={type === v} onClick={() => { setType(v); setCategory(''); }}>{l}</button>
         ))}
       </div>
@@ -151,38 +137,21 @@ export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction;
         </div>
       </div>
 
-      {type !== 'transfer' && (
-        <div>
-          <div className="section-label" style={{ marginBottom: 8 }}>Kategori</div>
-          <div className="chips" role="group" aria-label="Kategori">
-            {visibleCats.map((c) => (
-              <button key={c.id} aria-pressed={category === c.name} onClick={() => setCategory(c.name)}>{c.name}</button>
-            ))}
-            {catPool.length > 7 && <button onClick={() => setShowAllCats(!showAllCats)}>{showAllCats ? 'Lebih sedikit' : `+ ${catPool.length - 7} lainnya`}</button>}
-          </div>
+      <div>
+        <div className="section-label" style={{ marginBottom: 8 }}>Kategori</div>
+        <div className="chips" role="group" aria-label="Kategori">
+          {visibleCats.map((c) => (
+            <button key={c.id} aria-pressed={category === c.name} onClick={() => setCategory(c.name)}>{c.name}</button>
+          ))}
+          {catPool.length > 7 && <button onClick={() => setShowAllCats(!showAllCats)}>{showAllCats ? 'Lebih sedikit' : `+ ${catPool.length - 7} lainnya`}</button>}
         </div>
-      )}
+      </div>
 
       <div className="card fields">
         <div className="field">
           <label htmlFor="tx-date">Tanggal</label>
           <input id="tx-date" type="date" value={date} onChange={(e) => setDate(e.target.value || todayISO())} />
         </div>
-        <div className="field">
-          <label htmlFor="tx-wallet">{type === 'transfer' ? 'Dari' : 'Dompet'}</label>
-          <select id="tx-wallet" value={walletId ?? ''} onChange={(e) => setWalletId(Number(e.target.value))}>
-            {wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-          </select>
-        </div>
-        {type === 'transfer' && (
-          <div className="field">
-            <label htmlFor="tx-to">Ke</label>
-            <select id="tx-to" value={toWalletId ?? ''} onChange={(e) => setToWalletId(Number(e.target.value))}>
-              <option value="" disabled>Pilih dompet</option>
-              {wallets.filter((w) => w.id !== walletId).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-            </select>
-          </div>
-        )}
         <div className="field">
           <label htmlFor="tx-note">Keterangan</label>
           <input id="tx-note" placeholder="Opsional" value={note} onChange={(e) => setNote(e.target.value)} />

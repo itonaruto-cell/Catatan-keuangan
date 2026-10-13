@@ -57,9 +57,9 @@ export function App() {
       {!online && <div className="offline-pill" role="status">Offline · data tetap tersimpan di HP</div>}
       <main>
         {page === 'beranda' && <Beranda onEdit={(t) => setSheet({ edit: t })} go={go} />}
-        {page === 'dompet' && <Dompet onTransfer={() => setSheet({ type: 'transfer' })} />}
+        {page === 'dompet' && <Dompet />}
         {page === 'aset' && <Aset />}
-        {page === 'laporan' && <Laporan />}
+        {page === 'laporan' && <Laporan onEdit={(t) => setSheet({ edit: t })} />}
         {page === 'pengaturan' && <Pengaturan onData={() => go('data')} />}
         {page === 'data' && <DataPage onBack={() => go('pengaturan')} onDone={() => go('beranda')} />}
       </main>

@@ -1,9 +1,8 @@
-import { useLiveQuery } from 'dexie-react-hooks';
 import { useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { ModalHeader, toast } from '../components/ui';
 import { applyImport } from '../lib/applyImport';
-import { db, exportAll, restoreAll, type BackupData } from '../lib/db';
+import { exportAll, restoreAll, type BackupData } from '../lib/db';
 import { backupToDrive, driveConfigured, restoreFromDrive } from '../lib/gdrive';
 import { FIELD_LABELS, findHeaderRow, guessMapping, mapRows, readSheet, type Cell, type Field, type Mapping } from '../lib/importer';
 import { longDate, rp, todayISO } from '../lib/format';
@@ -20,16 +19,13 @@ export function DataPage({ onBack, onDone }: { onBack: () => void; onDone: () =>
 }
 
 function ImportSection({ onDone }: { onDone: () => void }) {
-  const wallets = useLiveQuery(() => db.wallets.toArray(), []) ?? [];
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
   const [rows, setRows] = useState<Cell[][] | null>(null);
   const [header, setHeader] = useState(0);
   const [mapping, setMapping] = useState<Mapping>({});
-  const [walletId, setWalletId] = useState<number | undefined>();
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [keepBalances, setKeepBalances] = useState(true);
   const [showMapping, setShowMapping] = useState(false);
   const [done, setDone] = useState<{ added: number; duplicates: number } | null>(null);
 
@@ -55,14 +51,13 @@ function ImportSection({ onDone }: { onDone: () => void }) {
   const result = rows ? mapRows(body, mapping) : null;
   const cols = rows ? Math.max(...rows.slice(header, header + 20).map((r) => r.length)) : 0;
   const colName = (i: number) => (rows && rows[header][i] != null && String(rows[header][i]).trim()) || `Kolom ${i + 1}`;
-  const fields: Field[] = ['date', 'amount', 'type', 'income', 'expense', 'category', 'note', 'wallet'];
-  const fallback = walletId ?? wallets[0]?.id;
+  const fields: Field[] = ['date', 'amount', 'type', 'income', 'expense', 'category', 'note'];
 
   async function doImport() {
-    if (!result || !fallback) return;
+    if (!result) return;
     setBusy(true);
     try {
-      const r = await applyImport(result.rows, fallback, keepBalances);
+      const r = await applyImport(result.rows);
       setDone({ added: r.added, duplicates: r.duplicates });
       setRows(null);
     } finally {
@@ -100,10 +95,6 @@ function ImportSection({ onDone }: { onDone: () => void }) {
           <div className="bold" style={{ fontSize: 17 }}>{result.rows.length} transaksi siap dimasukkan</div>
           <button className="btn primary block" disabled={!result.rows.length || busy} onClick={doImport}>{busy ? 'Memasukkan…' : `Masukkan ${result.rows.length} transaksi`}</button>
           {!result.rows.length && <div className="notice warn">Belum ada transaksi yang terbaca. Ketuk “Ubah pencocokan kolom” dan pilih kolom tanggal serta jumlahnya.</div>}
-          <label className="row small" style={{ alignItems: 'flex-start' }}>
-            <input type="checkbox" checked={keepBalances} onChange={(e) => setKeepBalances(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--acc)', flex: 'none' }} />
-            <span>Jangan ubah saldo dompet saat ini. Riwayat lama hanya masuk ke catatan dan laporan.</span>
-          </label>
           {result.skipped > 0 && <div className="small muted">{result.skipped} baris dilewati karena tidak ada tanggal atau jumlahnya.</div>}
           {result.rows.length > 0 && (
             <div className="table-wrap">
@@ -131,12 +122,6 @@ function ImportSection({ onDone }: { onDone: () => void }) {
                     </select>
                   </div>
                 ))}
-                <div className="field">
-                  <label htmlFor="map-wallet-default" style={{ width: 150 }}>Dompet default</label>
-                  <select id="map-wallet-default" value={fallback ?? ''} onChange={(e) => setWalletId(Number(e.target.value))}>
-                    {wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-                  </select>
-                </div>
               </div>
             </>
           )}

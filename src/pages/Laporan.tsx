@@ -1,14 +1,16 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useState } from 'react';
 import { Icon } from '../components/Icon';
+import { Badge, Modal, ModalHeader } from '../components/ui';
 import { db, type Transaction } from '../lib/db';
-import { MONTHS, rp } from '../lib/format';
+import { dayLabel, MONTHS, rp } from '../lib/format';
 
-export function Laporan() {
+export function Laporan({ onEdit }: { onEdit: (t: Transaction) => void }) {
   const now = new Date();
   const [year, setYear] = useState(now.getFullYear());
   const [month, setMonth] = useState(now.getMonth());
   const txs = useLiveQuery(() => db.transactions.toArray(), []) ?? [];
+  const [open, setOpen] = useState<{ type: 'in' | 'out'; category: string } | null>(null);
 
   const key = (y: number, m: number) => `${y}-${String(m + 1).padStart(2, '0')}`;
   const cur = txs.filter((t) => t.date.startsWith(key(year, month)));
@@ -47,8 +49,17 @@ export function Laporan() {
         </div>
       )}
 
-      <Breakdown title="Pengeluaran per kategori" txs={cur.filter((t) => t.type === 'out')} prev={prev.filter((t) => t.type === 'out')} />
-      <Breakdown title="Pemasukan per kategori" txs={cur.filter((t) => t.type === 'in')} />
+      <Breakdown title="Pengeluaran per kategori" txs={cur.filter((t) => t.type === 'out')} prev={prev.filter((t) => t.type === 'out')} onPick={(c) => setOpen({ type: 'out', category: c })} />
+      <Breakdown title="Pemasukan per kategori" txs={cur.filter((t) => t.type === 'in')} onPick={(c) => setOpen({ type: 'in', category: c })} />
+
+      {open && (
+        <CategoryTxs
+          title={`${open.category} · ${MONTHS[month]} ${year}`}
+          txs={cur.filter((t) => t.type === open.type && t.category === open.category)}
+          onClose={() => setOpen(null)}
+          onEdit={(t) => { setOpen(null); onEdit(t); }}
+        />
+      )}
     </div>
   );
 }
@@ -57,7 +68,7 @@ function sum(txs: Transaction[], type: 'in' | 'out') {
   return txs.filter((t) => t.type === type).reduce((s, t) => s + t.amount, 0);
 }
 
-function Breakdown({ title, txs, prev }: { title: string; txs: Transaction[]; prev?: Transaction[] }) {
+function Breakdown({ title, txs, prev, onPick }: { title: string; txs: Transaction[]; prev?: Transaction[]; onPick: (category: string) => void }) {
   const by = new Map<string, number>();
   for (const t of txs) by.set(t.category, (by.get(t.category) ?? 0) + t.amount);
   const rows = [...by].sort((a, b) => b[1] - a[1]);
@@ -73,15 +84,38 @@ function Breakdown({ title, txs, prev }: { title: string; txs: Transaction[]; pr
       {rows.map(([cat, v]) => {
         const p = prevBy.get(cat);
         return (
-          <div key={cat} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div className="between small">
+          <button key={cat} onClick={() => onPick(cat)} aria-label={`Lihat transaksi ${cat}`}
+            style={{ display: 'flex', flexDirection: 'column', gap: 4, border: 'none', background: 'transparent', padding: '4px 0', textAlign: 'left', color: 'inherit', font: 'inherit' }}>
+            <div className="between small" style={{ width: '100%' }}>
               <span>{cat} <span className="muted">· {Math.round((v / total) * 100)}%</span></span>
-              <span className="bold">{rp(v)}{p ? <span className="muted" style={{ fontWeight: 400 }}> (bln lalu {rp(p)})</span> : null}</span>
+              <span className="row" style={{ gap: 2 }}><span className="bold">{rp(v)}{p ? <span className="muted" style={{ fontWeight: 400 }}> (bln lalu {rp(p)})</span> : null}</span><Icon name="chevR" size={16} /></span>
             </div>
-            <div className="bar"><span style={{ width: `${(v / max) * 100}%` }} /></div>
-          </div>
+            <div className="bar" style={{ width: '100%' }}><span style={{ width: `${(v / max) * 100}%` }} /></div>
+          </button>
         );
       })}
     </section>
+  );
+}
+
+function CategoryTxs({ title, txs, onClose, onEdit }: { title: string; txs: Transaction[]; onClose: () => void; onEdit: (t: Transaction) => void }) {
+  const list = [...txs].sort((a, b) => (b.date + (b.time ?? '')).localeCompare(a.date + (a.time ?? '')) || b.createdAt - a.createdAt);
+  return (
+    <Modal onClose={onClose} full label={title}>
+      <ModalHeader title={title} onClose={onClose} />
+      <div className="between small muted"><span>{list.length} transaksi</span><span className="bold">{rp(list.reduce((s, t) => s + t.amount, 0))}</span></div>
+      <div className="list">
+        {list.map((t) => (
+          <button key={t.id} className="item" onClick={() => onEdit(t)}>
+            <Badge label={t.category} />
+            <span className="main">
+              <span className="title" style={{ display: 'block' }}>{t.note || t.category}</span>
+              <span className="sub" style={{ display: 'block' }}>{dayLabel(t.date)}{t.time ? `, ${t.time}` : ''}</span>
+            </span>
+            <span className={`amt ${t.type === 'in' ? 'inc' : 'exp'}`}>{t.type === 'in' ? '+' : '−'}{rp(t.amount)}</span>
+          </button>
+        ))}
+      </div>
+    </Modal>
   );
 }
