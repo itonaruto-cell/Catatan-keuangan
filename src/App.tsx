@@ -61,7 +61,7 @@ export function App() {
         {page === 'aset' && <Aset />}
         {page === 'laporan' && <Laporan />}
         {page === 'pengaturan' && <Pengaturan onData={() => go('data')} />}
-        {page === 'data' && <DataPage onBack={() => go('pengaturan')} />}
+        {page === 'data' && <DataPage onBack={() => go('pengaturan')} onDone={() => go('beranda')} />}
       </main>
 
       <nav className="nav" aria-label="Menu utama">

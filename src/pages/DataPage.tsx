@@ -9,17 +9,17 @@ import { FIELD_LABELS, findHeaderRow, guessMapping, mapRows, readSheet, type Cel
 import { longDate, rp, todayISO } from '../lib/format';
 import { updateSettings, useSettings } from '../lib/settings';
 
-export function DataPage({ onBack }: { onBack: () => void }) {
+export function DataPage({ onBack, onDone }: { onBack: () => void; onDone: () => void }) {
   return (
     <div className="page">
       <ModalHeader title="Impor & Cadangan" onClose={onBack} />
-      <ImportSection />
+      <ImportSection onDone={onDone} />
       <BackupSection />
     </div>
   );
 }
 
-function ImportSection() {
+function ImportSection({ onDone }: { onDone: () => void }) {
   const wallets = useLiveQuery(() => db.wallets.toArray(), []) ?? [];
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
@@ -30,15 +30,19 @@ function ImportSection() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [keepBalances, setKeepBalances] = useState(true);
+  const [showMapping, setShowMapping] = useState(false);
+  const [done, setDone] = useState<{ added: number; duplicates: number } | null>(null);
 
   async function onFile(f: File | undefined) {
     if (!f) return;
-    setError('');
+    setError(''); setDone(null); setShowMapping(false);
     try {
       const r = await readSheet(f);
       if (!r.length) throw new Error();
       const h = findHeaderRow(r);
-      setRows(r); setHeader(h); setMapping(guessMapping(r[h])); setFileName(f.name);
+      const m = guessMapping(r[h]);
+      setRows(r); setHeader(h); setMapping(m); setFileName(f.name);
+      setShowMapping(!mapRows(r.slice(h + 1), m).rows.length);
     } catch {
       setError('File tidak bisa dibaca. Pakai file Excel (.xlsx/.xls) atau CSV.');
       setRows(null);
@@ -59,7 +63,7 @@ function ImportSection() {
     setBusy(true);
     try {
       const r = await applyImport(result.rows, fallback, keepBalances);
-      toast(`${r.added} transaksi dimasukkan${r.duplicates ? `, ${r.duplicates} sudah ada` : ''}`);
+      setDone({ added: r.added, duplicates: r.duplicates });
       setRows(null);
     } finally {
       setBusy(false);
@@ -69,6 +73,14 @@ function ImportSection() {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="section-label">Pindahkan catatan lama</div>
+      {done && (
+        <div className="card pad" role="status" style={{ display: 'flex', flexDirection: 'column', gap: 8, textAlign: 'center', alignItems: 'center' }}>
+          <span className="round-btn" style={{ background: 'var(--inc-soft)', color: 'var(--inc)' }}><Icon name="check" /></span>
+          <strong style={{ fontSize: 18 }}>{done.added} transaksi masuk ke riwayat</strong>
+          {done.duplicates > 0 && <span className="small muted">{done.duplicates} transaksi sudah ada sebelumnya, jadi tidak dimasukkan lagi.</span>}
+          <button className="btn primary block" onClick={onDone}>Lihat di Beranda</button>
+        </div>
+      )}
       {!rows && (
         <div className="card pad" style={{ border: '2px dashed var(--acc)', background: 'var(--acc-soft)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, textAlign: 'center' }}>
           <span className="round-btn" style={{ background: 'var(--acc)', color: '#fff' }}><Icon name="upload" /></span>
@@ -77,37 +89,22 @@ function ImportSection() {
           <button className="btn primary" onClick={() => fileRef.current?.click()}>Pilih file</button>
         </div>
       )}
-      <input ref={fileRef} type="file" hidden accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv" onChange={(e) => onFile(e.target.files?.[0])} />
+      {/* No accept filter: some Android apps hand over Excel files with a generic type, which a filter would grey out. */}
+      <input ref={fileRef} type="file" hidden onChange={(e) => onFile(e.target.files?.[0])} />
       {error && <div className="notice err" role="alert">{error}</div>}
 
       {rows && result && (
         <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div className="row"><Icon name="file" /><strong style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>{fileName}</strong>
             <button className="btn small" onClick={() => setRows(null)}>Batal</button></div>
-          <div className="small muted">Cocokkan kolom file dengan isian aplikasi. Saya sudah menebak, ubah kalau salah.</div>
-          <div className="card fields">
-            {fields.map((f) => (
-              <div className="field" key={f}>
-                <label htmlFor={`map-${f}`} style={{ width: 150 }}>{FIELD_LABELS[f]}</label>
-                <select id={`map-${f}`} value={mapping[f] ?? ''} onChange={(e) => setMapping({ ...mapping, [f]: e.target.value === '' ? undefined : Number(e.target.value) })}>
-                  <option value="">Tidak ada</option>
-                  {Array.from({ length: cols }, (_, i) => <option key={i} value={i}>{colName(i)}</option>)}
-                </select>
-              </div>
-            ))}
-            <div className="field">
-              <label htmlFor="map-wallet-default" style={{ width: 150 }}>Dompet default</label>
-              <select id="map-wallet-default" value={fallback ?? ''} onChange={(e) => setWalletId(Number(e.target.value))}>
-                {wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </div>
-          </div>
-
+          <div className="bold" style={{ fontSize: 17 }}>{result.rows.length} transaksi siap dimasukkan</div>
+          <button className="btn primary block" disabled={!result.rows.length || busy} onClick={doImport}>{busy ? 'Memasukkan…' : `Masukkan ${result.rows.length} transaksi`}</button>
+          {!result.rows.length && <div className="notice warn">Belum ada transaksi yang terbaca. Ketuk “Ubah pencocokan kolom” dan pilih kolom tanggal serta jumlahnya.</div>}
           <label className="row small" style={{ alignItems: 'flex-start' }}>
             <input type="checkbox" checked={keepBalances} onChange={(e) => setKeepBalances(e.target.checked)} style={{ width: 20, height: 20, accentColor: 'var(--acc)', flex: 'none' }} />
             <span>Jangan ubah saldo dompet saat ini. Riwayat lama hanya masuk ke catatan dan laporan.</span>
           </label>
-          <div className="small"><strong>{result.rows.length}</strong> transaksi terbaca{result.skipped ? `, ${result.skipped} baris dilewati (tanpa tanggal/jumlah)` : ''}.</div>
+          {result.skipped > 0 && <div className="small muted">{result.skipped} baris dilewati karena tidak ada tanggal atau jumlahnya.</div>}
           {result.rows.length > 0 && (
             <div className="table-wrap">
               <table>
@@ -120,7 +117,29 @@ function ImportSection() {
               </table>
             </div>
           )}
-          <button className="btn primary" disabled={!result.rows.length || busy} onClick={doImport}>{busy ? 'Memasukkan…' : `Masukkan ${result.rows.length} transaksi`}</button>
+          <button className="btn small" style={{ alignSelf: 'flex-start' }} onClick={() => setShowMapping(!showMapping)} aria-expanded={showMapping}>{showMapping ? 'Tutup pencocokan kolom' : 'Ubah pencocokan kolom'}</button>
+          {showMapping && (
+            <>
+              <div className="small muted">Cocokkan kolom file dengan isian aplikasi. Saya sudah menebak, ubah kalau salah.</div>
+              <div className="card fields">
+                {fields.map((f) => (
+                  <div className="field" key={f}>
+                    <label htmlFor={`map-${f}`} style={{ width: 150 }}>{FIELD_LABELS[f]}</label>
+                    <select id={`map-${f}`} value={mapping[f] ?? ''} onChange={(e) => setMapping({ ...mapping, [f]: e.target.value === '' ? undefined : Number(e.target.value) })}>
+                      <option value="">Tidak ada</option>
+                      {Array.from({ length: cols }, (_, i) => <option key={i} value={i}>{colName(i)}</option>)}
+                    </select>
+                  </div>
+                ))}
+                <div className="field">
+                  <label htmlFor="map-wallet-default" style={{ width: 150 }}>Dompet default</label>
+                  <select id="map-wallet-default" value={fallback ?? ''} onChange={(e) => setWalletId(Number(e.target.value))}>
+                    {wallets.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
+                  </select>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       )}
     </section>
