@@ -151,3 +151,5 @@ table { border-collapse: collapse; font-size: 12px; width: 100%; }
 th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
 
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.offline-pill { position: sticky; top: 0; z-index: 30; margin: 0 auto; width: fit-content; padding: 6px 14px; border-radius: 0 0 14px 14px; background: var(--text); color: var(--bg); font-size: 12px; font-weight: 600; }

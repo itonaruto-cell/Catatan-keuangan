@@ -4,6 +4,7 @@ import { Icon } from './components/Icon';
 import { Toaster } from './components/ui';
 import type { Transaction, TxType } from './lib/db';
 import { backupToDrive, driveConfigured } from './lib/gdrive';
+import { useOnline } from './lib/offline';
 import { getSettings, updateSettings, useApplyTheme } from './lib/settings';
 import { Aset } from './pages/Aset';
 import { Beranda } from './pages/Beranda';
@@ -40,17 +41,20 @@ export function App() {
   useEffect(() => { window.scrollTo(0, 0); }, [page]);
 
   // Daily automatic backup, silently, once the user has connected Google Drive.
+  // Offline it waits and runs as soon as the phone is back online.
+  const online = useOnline();
   useEffect(() => {
     const s = getSettings();
-    if (!driveConfigured() || !s.autoBackup || !s.lastBackupAt) return;
+    if (!online || !driveConfigured() || !s.autoBackup || !s.lastBackupAt) return;
     if (Date.now() - new Date(s.lastBackupAt).getTime() < 24 * 3600 * 1000) return;
     backupToDrive(false).then((at) => updateSettings({ lastBackupAt: at.toISOString() })).catch(() => {});
-  }, []);
+  }, [online]);
 
   const go = (p: Page) => { location.hash = p === 'beranda' ? '' : p; setPage(p); };
 
   return (
     <div className="app">
+      {!online && <div className="offline-pill" role="status">Offline · data tetap tersimpan di HP</div>}
       <main>
         {page === 'beranda' && <Beranda onEdit={(t) => setSheet({ edit: t })} go={go} />}
         {page === 'dompet' && <Dompet onTransfer={() => setSheet({ type: 'transfer' })} />}

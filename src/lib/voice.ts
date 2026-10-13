@@ -1,4 +1,6 @@
 // Browser speech recognition (Chrome on Android supports Indonesian).
+// Without internet it uses the on-device recognizer when the browser offers one
+// (Chrome's processLocally); otherwise voice entry needs a connection.
 
 interface Recognition {
   lang: string;
@@ -7,18 +9,42 @@ interface Recognition {
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal: boolean }> }) => void) | null;
   onerror: ((e: { error: string }) => void) | null;
   onend: (() => void) | null;
+  processLocally?: boolean;
   start(): void;
   stop(): void;
 }
 
-function ctor(): (new () => Recognition) | undefined {
-  const w = window as unknown as { SpeechRecognition?: new () => Recognition; webkitSpeechRecognition?: new () => Recognition };
+type LocalState = 'available' | 'downloadable' | 'downloading' | 'unavailable';
+interface RecognitionCtor {
+  new (): Recognition;
+  available?: (o: { langs: string[]; processLocally: boolean }) => Promise<LocalState>;
+  install?: (o: { langs: string[]; processLocally: boolean }) => Promise<boolean>;
+}
+
+function ctor(): RecognitionCtor | undefined {
+  const w = window as unknown as { SpeechRecognition?: RecognitionCtor; webkitSpeechRecognition?: RecognitionCtor };
   return w.SpeechRecognition ?? w.webkitSpeechRecognition;
+}
+
+const LOCAL = { langs: ['id-ID'], processLocally: true };
+
+/** Whether Indonesian speech can be recognized on this device without internet. */
+export async function offlineVoice(): Promise<LocalState | 'unsupported'> {
+  const C = ctor();
+  if (!C?.available) return 'unsupported';
+  try { return await C.available(LOCAL); } catch { return 'unsupported'; }
+}
+
+/** Downloads the on-device Indonesian speech model. */
+export async function installOfflineVoice(): Promise<boolean> {
+  try { return (await ctor()?.install?.(LOCAL)) ?? false; } catch { return false; }
 }
 
 export function voiceSupported(): boolean {
   return !!ctor();
 }
+
+const NO_OFFLINE = 'Tanpa internet, input suara belum bisa di HP ini. Isi formnya secara manual.';
 
 export function listen(handlers: {
   onText: (text: string, final: boolean) => void;
@@ -31,7 +57,24 @@ export function listen(handlers: {
     handlers.onEnd();
     return () => {};
   }
-  const r = new C();
+  let stopped = false;
+  let r: Recognition | undefined;
+  const start = (local: boolean) => {
+    if (stopped) { handlers.onEnd(); return; }
+    r = new C();
+    if (local) r.processLocally = true;
+    setup(r, handlers);
+    r.start();
+  };
+  if (navigator.onLine) start(false);
+  else offlineVoice().then((s) => {
+    if (s === 'available') start(true);
+    else { handlers.onError(s === 'downloadable' ? 'Suara offline belum diunduh. Unduh di Pengaturan saat online, atau isi formnya secara manual.' : NO_OFFLINE); handlers.onEnd(); }
+  });
+  return () => { stopped = true; r?.stop(); };
+}
+
+function setup(r: Recognition, handlers: Parameters<typeof listen>[0]) {
   r.lang = 'id-ID';
   r.interimResults = true;
   r.continuous = false;
@@ -48,11 +91,9 @@ export function listen(handlers: {
     const msg: Record<string, string> = {
       'not-allowed': 'Izin mikrofon ditolak. Izinkan mikrofon untuk situs ini di pengaturan browser.',
       'no-speech': 'Tidak ada suara yang terdengar. Coba lagi.',
-      network: 'Input suara butuh koneksi internet.',
+      network: NO_OFFLINE,
     };
     handlers.onError(msg[e.error] ?? `Input suara gagal (${e.error}).`);
   };
   r.onend = handlers.onEnd;
-  r.start();
-  return () => r.stop();
 }

@@ -1,10 +1,15 @@
 // Reads a receipt photo on the device with Tesseract (Indonesian + English).
+// All of its files are served by the app itself (see scripts/offline.ts), so it works offline.
 
 import { totalFromReceipt } from './parse';
 
 export async function readReceipt(file: File, onProgress?: (pct: number) => void): Promise<{ amount: number; merchant: string; text: string }> {
   const { createWorker } = await import('tesseract.js');
   const worker = await createWorker(['ind', 'eng'], 1, {
+    workerPath: '/ocr/worker.min.js',
+    corePath: '/ocr',
+    langPath: '/ocr/lang',
+    workerBlobURL: false,
     logger: (m: { status: string; progress: number }) => {
       if (m.status === 'recognizing text') onProgress?.(Math.round(m.progress * 100));
     },

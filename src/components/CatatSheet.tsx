@@ -78,7 +78,7 @@ export function CatatSheet({ edit, initialType, onClose }: { edit?: Transaction;
       if (!category && catPool.some((c) => c.name === 'Belanja')) setCategory('Belanja');
       if (r.merchant && !note) setNote(r.merchant.charAt(0) + r.merchant.slice(1).toLowerCase());
     } catch {
-      setProblem('Foto struk gagal dibaca. Pastikan ada koneksi internet saat pertama kali dipakai.');
+      setProblem('Foto struk gagal dibaca. Coba foto ulang dengan cahaya yang cukup, atau isi sendiri.');
     } finally {
       setOcr(null);
       if (fileRef.current) fileRef.current.value = '';

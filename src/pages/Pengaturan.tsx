@@ -1,7 +1,9 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { db } from '../lib/db';
+import { useOfflineStatus, useOnline } from '../lib/offline';
+import { installOfflineVoice, offlineVoice } from '../lib/voice';
 import { updateSettings, useSettings, type Accent, type Mode } from '../lib/settings';
 
 const ACCENTS: { v: Accent; l: string; c: string }[] = [
@@ -62,6 +64,8 @@ export function Pengaturan({ onData }: { onData: () => void }) {
         </div>
       </section>
 
+      <OfflineSection />
+
       <button className="list item" onClick={onData} style={{ border: '1px solid var(--border)' }}>
         <span className="ico" style={{ background: 'var(--acc-soft)', color: 'var(--acc-text)' }}><Icon name="cloud" /></span>
         <span className="main"><span className="title" style={{ display: 'block' }}>Impor & cadangan</span><span className="sub" style={{ display: 'block' }}>Masukkan file lama, cadangkan ke Google Drive</span></span>
@@ -90,5 +94,41 @@ export function Pengaturan({ onData }: { onData: () => void }) {
         </form>
       </section>
     </div>
+  );
+}
+
+function OfflineSection() {
+  const status = useOfflineStatus();
+  const online = useOnline();
+  const [voice, setVoice] = useState<Awaited<ReturnType<typeof offlineVoice>> | null>(null);
+  const [installing, setInstalling] = useState(false);
+  useEffect(() => { offlineVoice().then(setVoice); }, [online]);
+
+  async function install() {
+    setInstalling(true);
+    await installOfflineVoice();
+    setVoice(await offlineVoice());
+    setInstalling(false);
+  }
+
+  const waiting = online ? 'Menyiapkan…' : 'Perlu internet sekali';
+  const row = (label: string, value: React.ReactNode) => (
+    <div className="field"><span style={{ flex: 1, fontSize: 14 }}>{label}</span><span className="bold" style={{ fontSize: 14, textAlign: 'right' }}>{value}</span></div>
+  );
+  const ok = <span style={{ color: 'var(--inc)' }}>Siap offline</span>;
+
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="section-label">Tanpa internet</div>
+      <div className="card fields">
+        {row('Catat, riwayat, laporan, dompet', !status ? (import.meta.env.PROD ? waiting : '—') : status.appReady ? ok : waiting)}
+        {row('Foto struk', !status ? '—' : status.ocrReady ? ok : waiting)}
+        {row('Bicara', voice === 'available' ? ok
+          : voice === 'downloadable' ? <button className="btn small" disabled={installing || !online} onClick={install}>{installing ? 'Mengunduh…' : 'Unduh'}</button>
+          : voice === 'downloading' ? 'Mengunduh…'
+          : <span className="muted">Butuh internet</span>)}
+      </div>
+      <p className="small muted" style={{ margin: 0 }}>Semua data tersimpan di HP ini, jadi bisa dicatat kapan saja. Cadangan Google Drive jalan lagi otomatis saat HP online.</p>
+    </section>
   );
 }
