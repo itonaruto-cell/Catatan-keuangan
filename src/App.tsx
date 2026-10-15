@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { CatatSheet } from './components/CatatSheet';
 import { Icon } from './components/Icon';
 import { Toaster } from './components/ui';
-import type { Transaction, TxType } from './lib/db';
+import { db, type Transaction, type TxType } from './lib/db';
 import { backupToDrive, driveConfigured } from './lib/gdrive';
 import { useOnline } from './lib/offline';
 import { getSettings, updateSettings, useApplyTheme } from './lib/settings';
@@ -32,6 +32,9 @@ export function App() {
   useApplyTheme();
   const [page, setPage] = useState<Page>(pageFromHash);
   const [sheet, setSheet] = useState<Sheet>(null);
+  // If the stored data cannot be opened, say so instead of showing an empty app.
+  const [dbError, setDbError] = useState('');
+  useEffect(() => { db.open().catch((e: Error) => setDbError(`${e.name}: ${e.message}`)); }, []);
 
   useEffect(() => {
     // History is kept flat: Beranda underneath, at most one other page on top, so the
@@ -68,6 +71,7 @@ export function App() {
   return (
     <div className="app">
       {!online && <div className="offline-pill" role="status">Offline · data tetap tersimpan di HP</div>}
+      {dbError && <div className="notice err" role="alert" style={{ margin: 12 }}>Data di HP ini gagal dibuka, jadi tampilannya kosong. Datanya belum tentu hilang, jangan hapus data browser. Kirim tulisan ini ke Claude: {dbError}</div>}
       <main>
         {page === 'beranda' && <Beranda onEdit={(t) => setSheet({ edit: t })} go={go} />}
         {page === 'dompet' && <Dompet />}
