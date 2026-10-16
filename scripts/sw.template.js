@@ -49,7 +49,7 @@ self.addEventListener('message', (e) => {
 
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
+  if (e.request.method !== 'GET' || url.origin !== location.origin || url.pathname.startsWith('/api/')) return;
   if (e.request.mode === 'navigate') {
     // Fresh page when online, saved copy when offline.
     e.respondWith(fetch(e.request).catch(() => caches.match('/', { cacheName: APP_CACHE })));

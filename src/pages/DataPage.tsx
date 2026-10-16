@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { ModalHeader, toast } from '../components/ui';
 import { applyImport } from '../lib/applyImport';
 import { exportAll, restoreAll, type BackupData } from '../lib/db';
+import { cloudAvailable, connect, disconnect, fetchBackup, uploadNow, useCloud } from '../lib/cloud';
 import { backupToDrive, driveConfigured, restoreFromDrive } from '../lib/gdrive';
 import { FIELD_LABELS, findHeaderRow, guessMapping, mapRows, readSheet, type Cell, type Field, type Mapping } from '../lib/importer';
 import { longDate, rp, todayISO } from '../lib/format';
@@ -12,6 +13,7 @@ export function DataPage({ onBack, onDone }: { onBack: () => void; onDone: () =>
   return (
     <div className="page">
       <ModalHeader title="Impor & Cadangan" onClose={onBack} />
+      <CloudSection onDone={onDone} />
       <ImportSection onDone={onDone} />
       <BackupSection />
     </div>
@@ -198,6 +200,70 @@ function BackupSection() {
       </div>
       <input ref={jsonRef} type="file" accept="application/json,.json" hidden onChange={(e) => { restoreJson(e.target.files?.[0]); e.target.value = ''; }} />
       <p className="small muted" style={{ margin: 0 }}>Data tersimpan di HP ini. Rutin cadangkan supaya aman kalau HP hilang atau ganti HP.</p>
+    </section>
+  );
+}
+
+function when(iso: string): string {
+  const d = new Date(iso);
+  return `${longDate(todayISO(d))}, ${d.toTimeString().slice(0, 5).replace(':', '.')}`;
+}
+
+function CloudSection({ onDone }: { onDone: () => void }) {
+  const c = useCloud();
+  const [available, setAvailable] = useState<boolean | null>(null);
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => { cloudAvailable().then(setAvailable); }, []);
+
+  async function run(fn: () => Promise<void>) {
+    setBusy(true); setError('');
+    try { await fn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
+  }
+
+  const restore = () => run(async () => {
+    const data = await fetchBackup(code);
+    if (!data) throw new Error('Tidak ada cadangan dengan kode itu. Cek lagi ejaannya.');
+    if (!confirm(`Pulihkan ${data.transactions.length} transaksi, ${data.wallets.length} dompet, ${data.investments.length} aset, dan ${data.receivables.length} piutang dari cadangan ${when(data.exportedAt)}? Isi HP ini akan diganti.`)) return;
+    await connect(code, 'restore');
+    toast('Data dipulihkan');
+    onDone();
+  });
+  const start = () => run(async () => {
+    if (await fetchBackup(code)) throw new Error('Kode ini sudah punya cadangan. Ketuk "Pulihkan" untuk mengambilnya, atau pakai kode lain.');
+    await connect(code, 'upload');
+    setCode('');
+    toast('Cadangan online aktif');
+  });
+
+  return (
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div className="section-label">Cadangan online otomatis</div>
+      {available === false && <div className="notice warn">Cadangan online belum aktif. Pemilik aplikasi perlu menyambungkan penyimpanan di Vercel, atau HP sedang tidak tersambung internet.</div>}
+      {available && c.code && (
+        <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div className="row"><span style={{ color: 'var(--inc)' }}><Icon name="check" /></span><strong style={{ flex: 1 }}>Aktif, tersalin otomatis tiap ada perubahan</strong></div>
+          <div className="small muted">Terakhir dicadangkan: {c.lastAt ? when(c.lastAt) : 'belum'}{c.busy ? ' · mencadangkan…' : ''}</div>
+          <div className="small">Kode pemulihan: <strong>{c.code}</strong>. Simpan kode ini, karena hanya kode ini yang bisa mengembalikan data Anda.</div>
+          {c.error && <div className="notice warn">{c.error}</div>}
+          <div className="grid2">
+            <button className="btn primary" disabled={c.busy} onClick={() => uploadNow().then(() => toast('Tercadang online'), () => {})}>Cadangkan sekarang</button>
+            <button className="btn" onClick={() => { if (confirm('Matikan cadangan online di HP ini? Cadangan yang sudah tersimpan tidak dihapus.')) disconnect(); }}>Matikan</button>
+          </div>
+        </div>
+      )}
+      {available && !c.code && (
+        <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span className="small">Buat kode pemulihan yang mudah Anda ingat, minimal 8 huruf, misalnya <em>keuanganito2026</em>. Data HP ini akan tersalin otomatis ke penyimpanan online Anda. Di HP mana pun, data bisa dikembalikan dengan kode yang sama.</span>
+          <div className="card fields"><div className="field"><label htmlFor="cloud-code">Kode</label><input id="cloud-code" autoComplete="off" autoCapitalize="none" placeholder="Kode pemulihan" value={code} onChange={(e) => setCode(e.target.value)} /></div></div>
+          <div className="grid2">
+            <button className="btn primary" disabled={busy || code.trim().length < 8} onClick={start}>Aktifkan</button>
+            <button className="btn" disabled={busy || code.trim().length < 8} onClick={restore}>Pulihkan</button>
+          </div>
+          {error && <div className="notice err" role="alert">{error}</div>}
+        </div>
+      )}
     </section>
   );
 }

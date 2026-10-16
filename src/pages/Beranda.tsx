@@ -79,9 +79,9 @@ export function Beranda({ onEdit, go }: { onEdit: (t: Transaction) => void; go: 
 
         {txs.length === 0 && (
           <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <strong>Punya catatan dari aplikasi lama?</strong>
-            <span className="small muted">Unggah file Excel atau CSV-nya supaya riwayat lama ikut masuk.</span>
-            <button className="btn primary" onClick={() => go('data')}><Icon name="upload" size={18} />Impor file Excel</button>
+            <strong>Belum ada catatan di HP ini</strong>
+            <span className="small muted">Kembalikan data dengan kode pemulihan, atau masukkan riwayat dari file Excel aplikasi lama.</span>
+            <button className="btn primary" onClick={() => go('data')}><Icon name="cloud" size={18} />Pulihkan atau impor data</button>
           </div>
         )}
 
