@@ -1,10 +1,10 @@
 // Online backup of the whole app, stored privately in Vercel Blob.
 // Each backup is filed under a hash of the user's recovery code; the code itself is never stored.
-// Needs a private Blob store connected to the project (BLOB_READ_WRITE_TOKEN).
+// Needs a private Blob store connected to the project (BLOB_READ_WRITE_TOKEN, or BLOB_STORE_ID with Vercel OIDC).
 import { createHash } from 'node:crypto';
 import { get, put } from '@vercel/blob';
 
-const configured = () => !!process.env.BLOB_READ_WRITE_TOKEN;
+const configured = () => !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
 
 function folder(request) {

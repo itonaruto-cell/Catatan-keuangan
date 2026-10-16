@@ -211,11 +211,12 @@ function when(iso: string): string {
 
 function CloudSection({ onDone }: { onDone: () => void }) {
   const c = useCloud();
-  const [available, setAvailable] = useState<boolean | null>(null);
+  const [status, setStatus] = useState<Awaited<ReturnType<typeof cloudAvailable>> | null>(null);
+  const available = status === null ? null : status === 'ok';
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => { cloudAvailable().then(setAvailable); }, []);
+  useEffect(() => { cloudAvailable().then(setStatus); }, []);
 
   async function run(fn: () => Promise<void>) {
     setBusy(true); setError('');
@@ -240,7 +241,13 @@ function CloudSection({ onDone }: { onDone: () => void }) {
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div className="section-label">Cadangan online otomatis</div>
-      {available === false && <div className="notice warn">Cadangan online belum aktif. Pemilik aplikasi perlu menyambungkan penyimpanan di Vercel, atau HP sedang tidak tersambung internet.</div>}
+      {available === false && (
+        <div className="notice warn">
+          {status === 'offline' ? 'HP sedang tidak tersambung internet. Buka halaman ini lagi saat online.'
+            : status === 'not-connected' ? 'Cadangan online belum aktif: penyimpanan Blob belum tersambung ke proyek di Vercel.'
+            : `Cadangan online belum bisa dihubungi (${status}). Kirim tulisan ini ke Claude.`}
+        </div>
+      )}
       {available && c.code && (
         <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div className="row"><span style={{ color: 'var(--inc)' }}><Icon name="check" /></span><strong style={{ flex: 1 }}>Aktif, tersalin otomatis tiap ada perubahan</strong></div>

@@ -28,9 +28,12 @@ async function call(method: 'GET' | 'PUT', code?: string, body?: BackupData, for
   });
 }
 
-/** Whether online backup is switched on for this app (a Blob store is connected). */
-export async function cloudAvailable(): Promise<boolean> {
-  try { return (await call('GET')).ok; } catch { return false; }
+/** 'ok' when online backup is switched on, otherwise why not. */
+export async function cloudAvailable(): Promise<'ok' | 'not-connected' | 'offline' | `error ${number}`> {
+  try {
+    const r = await call('GET');
+    return r.ok ? 'ok' : r.status === 503 ? 'not-connected' : `error ${r.status}`;
+  } catch { return 'offline'; }
 }
 
 /** The backup stored under a code, or null when there is none. */

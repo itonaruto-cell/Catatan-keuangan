@@ -5,7 +5,7 @@ vi.mock('@vercel/blob', () => ({
   put: async (path, body) => { store.set(path, body); },
   get: async (path) => (store.has(path) ? { statusCode: 200, stream: new Response(store.get(path)).body } : null),
 }));
-const { GET, PUT } = await import('./backup.js');
+const { GET, PUT } = await import('../api/backup.js');
 
 const req = (method, code, body, query = '') =>
   new Request(`https://x/api/backup${query}`, { method, headers: code ? { 'x-kode': code } : {}, body: body ? JSON.stringify(body) : undefined });
