@@ -25,3 +25,11 @@ describe('separateWallets', () => {
     expect(separateWallets([], [w]).wallets).toEqual([w]);
   });
 });
+
+import { weakCode } from './weakCode';
+describe('weakCode', () => {
+  it('flags codes anyone could guess', () => {
+    for (const c of ['12345678', '87654321', 'aaaaaaaa', 'abcdefgh', 'password1', '11112222']) expect(weakCode(c), c).toBe(true);
+    for (const c of ['mangga-bca-1987', 'keuanganito2026']) expect(weakCode(c), c).toBe(false);
+  });
+});

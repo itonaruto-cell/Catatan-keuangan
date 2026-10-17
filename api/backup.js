@@ -2,7 +2,7 @@
 // Each backup is filed under a hash of the user's recovery code; the code itself is never stored.
 // Needs a private Blob store connected to the project (BLOB_READ_WRITE_TOKEN, or BLOB_STORE_ID with Vercel OIDC).
 import { createHash } from 'node:crypto';
-import { get, put } from '@vercel/blob';
+import { del, get, list, put } from '@vercel/blob';
 
 const configured = () => !!(process.env.BLOB_READ_WRITE_TOKEN || process.env.BLOB_STORE_ID);
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
@@ -48,4 +48,18 @@ export async function PUT(request) {
   // One copy per day as well, so an earlier state can be recovered.
   await put(`${dir}/${new Date().toISOString().slice(0, 10)}.json`, body, opts);
   return json({ ok: true, savedAt: new Date().toISOString() });
+}
+
+/** Removes every backup stored under a code (used when the user switches to a new code). */
+export async function DELETE(request) {
+  if (!configured()) return json({ configured: false }, 503);
+  const dir = folder(request);
+  if (!dir) return json({ error: 'code' }, 400);
+  let cursor;
+  do {
+    const page = await list({ prefix: `${dir}/`, cursor });
+    if (page.blobs.length) await del(page.blobs.map((b) => b.url));
+    cursor = page.hasMore ? page.cursor : undefined;
+  } while (cursor);
+  return json({ ok: true });
 }

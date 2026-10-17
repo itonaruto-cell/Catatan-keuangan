@@ -5,6 +5,8 @@
 import { useSyncExternalStore } from 'react';
 import { db, exportAll, restoreAll, type BackupData } from './db';
 
+export { weakCode } from './weakCode';
+
 const CODE = 'ck-cloud-code';
 const LAST = 'ck-cloud-last';
 
@@ -20,7 +22,7 @@ export function useCloud(): CloudState {
   return useSyncExternalStore((l) => { listeners.add(l); return () => listeners.delete(l); }, () => state);
 }
 
-async function call(method: 'GET' | 'PUT', code?: string, body?: BackupData, force = false): Promise<Response> {
+async function call(method: 'GET' | 'PUT' | 'DELETE', code?: string, body?: BackupData, force = false): Promise<Response> {
   return fetch(`/api/backup${force ? '?force=1' : ''}`, {
     method, cache: 'no-store',
     headers: { ...(code ? { 'x-kode': code } : {}), ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -73,6 +75,20 @@ export async function connect(code: string, mode: 'restore' | 'upload'): Promise
   save(CODE, code);
   set({ code });
   if (mode === 'upload') await uploadNow();
+}
+
+/** Moves the backup to a new code and deletes everything stored under the old one. */
+export async function changeCode(newCode: string): Promise<void> {
+  const old = state.code;
+  newCode = newCode.trim();
+  if (await fetchBackup(newCode)) throw new Error('Kode itu sudah dipakai untuk cadangan lain. Pilih kode lain.');
+  save(CODE, newCode);
+  set({ code: newCode });
+  await uploadNow();
+  if (old && old.toLowerCase() !== newCode.toLowerCase()) {
+    const r = await call('DELETE', old);
+    if (!r.ok) throw new Error('Kode baru sudah aktif, tapi cadangan lama belum terhapus. Coba lagi nanti.');
+  }
 }
 
 export function disconnect() {

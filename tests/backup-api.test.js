@@ -4,8 +4,10 @@ const store = new Map();
 vi.mock('@vercel/blob', () => ({
   put: async (path, body) => { store.set(path, body); },
   get: async (path) => (store.has(path) ? { statusCode: 200, stream: new Response(store.get(path)).body } : null),
+  list: async ({ prefix }) => ({ blobs: [...store.keys()].filter((k) => k.startsWith(prefix)).map((k) => ({ url: k })), hasMore: false }),
+  del: async (urls) => { for (const u of urls) store.delete(u); },
 }));
-const { GET, PUT } = await import('../api/backup.js');
+const { GET, PUT, DELETE } = await import('../api/backup.js');
 
 const req = (method, code, body, query = '') =>
   new Request(`https://x/api/backup${query}`, { method, headers: code ? { 'x-kode': code } : {}, body: body ? JSON.stringify(body) : undefined });
@@ -34,5 +36,13 @@ describe('backup api', () => {
     expect((await PUT(req('PUT', 'rahasiaito', data(0)))).status).toBe(409);
     expect((await (await GET(req('GET', 'rahasiaito'))).json()).transactions).toHaveLength(5);
     expect((await PUT(req('PUT', 'rahasiaito', data(0), '?force=1'))).status).toBe(200);
+  });
+
+  it('deletes everything under one code only', async () => {
+    await PUT(req('PUT', 'kode-lama-1', data(2)));
+    await PUT(req('PUT', 'kode-baru-1', data(2)));
+    expect((await DELETE(req('DELETE', 'kode-lama-1'))).status).toBe(200);
+    expect((await GET(req('GET', 'kode-lama-1'))).status).toBe(404);
+    expect((await GET(req('GET', 'kode-baru-1'))).status).toBe(200);
   });
 });

@@ -3,7 +3,7 @@ import { Icon } from '../components/Icon';
 import { ModalHeader, toast } from '../components/ui';
 import { applyImport } from '../lib/applyImport';
 import { exportAll, restoreAll, type BackupData } from '../lib/db';
-import { cloudAvailable, connect, disconnect, fetchBackup, uploadNow, useCloud } from '../lib/cloud';
+import { changeCode, cloudAvailable, connect, disconnect, fetchBackup, uploadNow, useCloud, weakCode } from '../lib/cloud';
 import { backupToDrive, driveConfigured, restoreFromDrive } from '../lib/gdrive';
 import { FIELD_LABELS, findHeaderRow, guessMapping, mapRows, readSheet, type Cell, type Field, type Mapping } from '../lib/importer';
 import { longDate, rp, todayISO } from '../lib/format';
@@ -231,7 +231,16 @@ function CloudSection({ onDone }: { onDone: () => void }) {
     toast('Data dipulihkan');
     onDone();
   });
+  const change = () => run(async () => {
+    const next = prompt('Kode pemulihan baru (minimal 8 huruf/angka, sulit ditebak orang lain):')?.trim();
+    if (!next) return;
+    if (next.length < 8) throw new Error('Kode minimal 8 huruf atau angka.');
+    if (weakCode(next)) throw new Error('Kode itu terlalu mudah ditebak. Pakai gabungan kata dan angka, misalnya mangga-bca-1987.');
+    await changeCode(next);
+    toast('Kode diganti, cadangan lama dihapus');
+  });
   const start = () => run(async () => {
+    if (weakCode(code)) throw new Error('Kode itu terlalu mudah ditebak. Pakai gabungan kata dan angka, misalnya mangga-bca-1987.');
     if (await fetchBackup(code)) throw new Error('Kode ini sudah punya cadangan. Ketuk "Pulihkan" untuk mengambilnya, atau pakai kode lain.');
     await connect(code, 'upload');
     setCode('');
@@ -254,6 +263,9 @@ function CloudSection({ onDone }: { onDone: () => void }) {
           <div className="small muted">Terakhir dicadangkan: {c.lastAt ? when(c.lastAt) : 'belum'}{c.busy ? ' · mencadangkan…' : ''}</div>
           <div className="small">Kode pemulihan: <strong>{c.code}</strong>. Simpan kode ini, karena hanya kode ini yang bisa mengembalikan data Anda.</div>
           {c.error && <div className="notice warn">{c.error}</div>}
+          {weakCode(c.code) && <div className="notice warn">Kode ini terlalu mudah ditebak, jadi orang lain bisa membuka cadangan Anda. Ketuk “Ganti kode”.</div>}
+          {error && <div className="notice err" role="alert">{error}</div>}
+          <button className="btn" disabled={busy || c.busy} onClick={change}>{busy ? 'Mengganti…' : 'Ganti kode'}</button>
           <div className="grid2">
             <button className="btn primary" disabled={c.busy} onClick={() => uploadNow().then(() => toast('Tercadang online'), () => {})}>Cadangkan sekarang</button>
             <button className="btn" onClick={() => { if (confirm('Matikan cadangan online di HP ini? Cadangan yang sudah tersimpan tidak dihapus.')) disconnect(); }}>Matikan</button>
@@ -262,7 +274,7 @@ function CloudSection({ onDone }: { onDone: () => void }) {
       )}
       {available && !c.code && (
         <div className="card pad" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <span className="small">Buat kode pemulihan yang mudah Anda ingat, minimal 8 huruf, misalnya <em>keuanganito2026</em>. Data HP ini akan tersalin otomatis ke penyimpanan online Anda. Di HP mana pun, data bisa dikembalikan dengan kode yang sama.</span>
+          <span className="small">Buat kode pemulihan yang mudah Anda ingat, minimal 8 huruf, gabungan kata dan angka yang sulit ditebak orang lain, misalnya <em>mangga-bca-1987</em>. Data HP ini akan tersalin otomatis ke penyimpanan online Anda. Di HP mana pun, data bisa dikembalikan dengan kode yang sama.</span>
           <div className="card fields"><div className="field"><label htmlFor="cloud-code">Kode</label><input id="cloud-code" autoComplete="off" autoCapitalize="none" placeholder="Kode pemulihan" value={code} onChange={(e) => setCode(e.target.value)} /></div></div>
           <div className="grid2">
             <button className="btn primary" disabled={busy || code.trim().length < 8} onClick={start}>Aktifkan</button>
